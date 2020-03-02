@@ -22,15 +22,23 @@ async def securityTrails():
 
 	print(colored('[+] Checking securityTrails ...', 'green', attrs=['bold']))
 	asession = AsyncHTMLSession()
-	sp = BeautifulSoup((await asession.get('https://securitytrails.com/domain/' + domain.split('/')[2] + '/history/a', verify=False)).text , "lxml")
-	return np.unique([ip['href'][9:] for ip in sp.find_all('a', href=True) if '/list/ip/' in ip['href']])
+	sp = BeautifulSoup((await asession.get('https://securitytrails.com/domain/' + domain.split('/')[2] + '/history/a', verify=False, timeout=10)).text , "lxml")
+
+	res = np.unique([ip['href'][9:] for ip in sp.find_all('a', href=True) if '/list/ip/' in ip['href']])
+	if len(res) == 0:
+		#retry same request with the cookies received
+		print(colored('[!] Retrying securityTrails ...', 'yellow', attrs=['bold']))
+		sp = BeautifulSoup((await asession.get('https://securitytrails.com/domain/' + domain.split('/')[2] + '/history/a', verify=False, timeout=10)).text , "lxml")
+
+		res = np.unique([ip['href'][9:] for ip in sp.find_all('a', href=True) if '/list/ip/' in ip['href']])
+	return res
 
 async def viewDNSdotInfo():
 	global domain
 
 	print(colored('[+] Checking viewDNS.info ...', 'green', attrs=['bold']))
 	asession = AsyncHTMLSession()
-	sp = BeautifulSoup((await asession.get('https://viewdns.info/iphistory/?domain=' + domain.split('/')[2], verify=False)).text , "lxml")
+	sp = BeautifulSoup((await asession.get('https://viewdns.info/iphistory/?domain=' + domain.split('/')[2], verify=False, timeout=10)).text , "lxml")
 	return np.unique([ip.text for ip in sp.find_all('td') if validators.ip_address.ipv4(ip.text)])
 
 async def checkIP(ip):
@@ -139,29 +147,40 @@ if __name__ == "__main__":
 			reference = cleanHeaders(asession.run(getReferenceHeaders)[0])
 
 			results = []
-			for l in asession.run(viewDNSdotInfo, securityTrails):
-				for ip in l:
-					results.append(ip)
+			try:
+				for l in asession.run(viewDNSdotInfo, securityTrails):
+					for ip in l:
+						results.append(ip)
+			except Exception as e:
+				if 'ConnectTimeoutError' in str(e) or 'Read timed out' in str(e):
+					print(colored('[!] Timeout (' + str(args.t) + 's) on connection with IP ' + ip, 'red', attrs=['bold']))
+				elif 'Max retries' in str(e):
+					print(colored('[!] Maximum retries exceeded on connection with IP ' + ip, 'red', attrs=['bold']))
+				else:
+					print(e)
 
 			print(colored('[+] Gathering results ...', 'green', attrs=['bold']))
 
 			asession = AsyncHTMLSession()
-			asession.run(*[lambda ip=ip: checkIP(ip) for ip in results])
-			#asession.run(checkIP)
+			if len(results) > 0:
+				asession.run(*[lambda ip=ip: checkIP(ip) for ip in results])
+				#asession.run(checkIP)
 
-			print(colored('Complete list of unique IPs (for manual testing) in /etc/hosts format:', 'green', attrs=['bold']))
+				print(colored('Complete list of unique IPs (for manual testing) in /etc/hosts format:', 'green', attrs=['bold']))
 
-			pt = PrettyTable()
-			pt.set_style(PLAIN_COLUMNS)
-			pt.header = False
-			pt.field_names = ["IP", "Domain"]
-			pt.align["IP"] = "l"
+				pt = PrettyTable()
+				pt.set_style(PLAIN_COLUMNS)
+				pt.header = False
+				pt.field_names = ["IP", "Domain"]
+				pt.align["IP"] = "l"
 
-			for r in results:
-				#print(colored('#' + r + '\t\t' + domain.split('/')[2], 'green', attrs=['bold']))
-				pt.add_row(['#' + r, domain.split('/')[2]])
+				for r in results:
+					#print(colored('#' + r + '\t\t' + domain.split('/')[2], 'green', attrs=['bold']))
+					pt.add_row(['#' + r, domain.split('/')[2]])
 
-			print(pt)
+				print(pt)
+			else:
+				print(colored('[!] No IPs were found for ' + domain, 'red', attrs=['bold']))
 
 		else:
 			print(colored('[-] URL is not valid. It must be like [http://|https://]domain.com', 'red', attrs=['bold']))
