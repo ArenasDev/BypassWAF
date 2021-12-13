@@ -7,7 +7,7 @@ cssselect==1.1.0
 decorator==4.4.1
 fake-useragent==0.1.11
 idna==2.9
-lxml==4.5.0
+lxml==4.6.5
 numpy==1.18.1
 parse==1.14.0
 prettytable==0.7.2
